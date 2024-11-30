@@ -2,11 +2,11 @@ pipeline {
     agent any
     environment {
         REGISTRY="hub.docker.com"
-        dockerRegistryCredential='hub.docker.com'
+        dockerRegistryCredential='docker hub'
         dockerImage = ''
         DOCKER_REGISTRY_URL="https://$REGISTRY"
         IMAGE_CREATED_BY="jenkins"
-        PROJECT_NAME="wahaduzzaman/php-app-prod"
+        PROJECT_NAME="php-app-prod"
         GIT_TAG=sh(returnStdout: true, script: '''        
             echo $(git describe --tags)
         ''').trim()
