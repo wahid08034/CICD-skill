@@ -199,7 +199,7 @@ pipeline {
                     sh 'docker run -d $DOCKER_TAG'
                     
                     // Send deployment success message to Discord
-                    def message = "Deployment of $DOCKER_TAG was successful."
+                    def message = "Deployment of $DOCKER_TAG was successful by wahid08034@gmail.com"
                     sh """
                     curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
                     """
