@@ -51,7 +51,7 @@ pipeline {
         stage('Building Docker image') { 
             steps { 
                 script { 
-                    dockerImage = docker.build("$DOCKER_TAG", "-f ./Dockerfile .")
+                    dockerImage = docker.build($DOCKER_TAG, "-f ./Dockerfile .")
                 }
                 sh '''
                 docker images | grep $PROJECT_NAME
