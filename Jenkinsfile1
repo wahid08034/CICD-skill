@@ -1,0 +1,150 @@
+pipeline {
+    agent any
+    environment {
+        REGISTRY = "hub.docker.com"
+        dockerRegistryCredential = 'docker.course.nxt'
+        dockerImage = ''
+        DOCKER_REGISTRY_URL = "https://$REGISTRY"
+        IMAGE_CREATED_BY = "jenkins"
+        PROJECT_NAME = "php-app-prod"
+        IMAGE_NAME = "php-app"
+        DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1298966562560278528/ZxIheTb2XWWhAtQrC2_S58tcSlszIp_qD1RG9j9hOk8hh1gS6YOCq7JDWG7aNpYvM5eq' // Replace with your Discord webhook URL
+    }
+    stages {
+        stage('Init') {
+            steps {
+                script {
+                    // Check if Git tags exist, fallback to "no-tag" if none found
+                    GIT_TAG = sh(
+                        script: '''
+                        git describe --tags || echo "no-tag"
+                        ''',
+                        returnStdout: true
+                    ).trim()
+
+                    // Build image version and Docker tag
+                    IMAGE_VERSION = "${BUILD_NUMBER}-${IMAGE_CREATED_BY}-${GIT_TAG}"
+                    DOCKER_TAG = "${REGISTRY}/${PROJECT_NAME}/${IMAGE_NAME}:${IMAGE_VERSION}"
+
+                    // Log resolved values
+                    echo "Git Tag: ${GIT_TAG}"
+                    echo "Docker Tag: ${DOCKER_TAG}"
+                }
+            }
+        }
+
+        stage('Building Docker image') { 
+            steps { 
+                script { 
+                    dockerImage = docker.build(DOCKER_TAG, "-f ./Dockerfile .")
+                }
+                sh '''
+                docker images | grep ${PROJECT_NAME}
+                '''
+            } 
+        }
+
+        stage('Push Docker image') {
+            steps {
+                script {
+                    docker.withRegistry("$DOCKER_REGISTRY_URL", dockerRegistryCredential) {
+                        dockerImage.push()
+                    }
+                    sh "docker images | grep ${PROJECT_NAME}"
+                }
+            }
+        }
+
+        stage('Security Scan') {
+            steps {
+                script {
+                    // Run Trivy scan on the built image
+                    def scanResult = sh(script: "trivy image --exit-code 1 --severity HIGH,CRITICAL ${DOCKER_TAG}", returnStatus: true)
+
+                    // Prepare the message based on the scan result
+                    if (scanResult != 0) {
+                        def message = "Trivy scan failed for image ${DOCKER_TAG}. Check the logs for details."
+                        sh """
+                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
+                        """
+                        error "Trivy scan failed."
+                    } else {
+                        def message = "Trivy scan succeeded for image ${DOCKER_TAG}. No critical vulnerabilities found."
+                        sh """
+                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Run Docker container') {
+            steps {
+                echo "Running Docker container for PHP app"
+                sh '''
+                docker run -d --name php-app -p 8088:80 ${DOCKER_TAG}
+                '''
+            }
+        }
+
+        stage('Run PHPUnit Tests') {
+            steps {
+                script {
+                    echo "Running PHPUnit tests in Docker container"
+                    def testResult = sh(script: '''
+                    docker exec php-app /var/www/html/vendor/bin/phpunit --configuration phpunit.xml
+                    ''', returnStatus: true)
+
+                    // Send test result to Discord
+                    if (testResult != 0) {
+                        def message = "Unit tests failed in Docker container php-app. Check the logs for details."
+                        sh """
+                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
+                        """
+                    } else {
+                        def message = "Unit tests passed successfully in Docker container php-app."
+                        sh """
+                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Run SQA Testing') {
+            steps {
+                script {
+                    echo "Running SQA testing for PHP application"
+                    def sqaResult = sh(script: '''
+                    echo "Running SQA tests..."
+                    ''', returnStatus: true)
+
+                    // Send SQA test result to Discord
+                    if (sqaResult != 0) {
+                        def message = "SQA tests failed for the PHP application. Check the logs for details."
+                        sh """
+                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
+                        """
+                    } else {
+                        def message = "SQA tests passed successfully for the PHP application."
+                        sh """
+                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    sh 'docker run -d ${DOCKER_TAG}'
+                    def message = "Deployment of ${DOCKER_TAG} was successful."
+                    sh """
+                    curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
+                    """
+                }
+            }
+        }
+    }
+}
