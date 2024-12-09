@@ -7,11 +7,13 @@ pipeline {
         DOCKER_REGISTRY_URL="https://$REGISTRY"
         IMAGE_CREATED_BY="jenkins"
         PROJECT_NAME="php-app-prod"
+        IMAGE_NAME="php-app"
         GIT_TAG=sh(returnStdout: true, script: '''        
             echo $(git describe --tags)
         ''').trim()
         IMAGE_VERSION="$BUILD_NUMBER-$IMAGE_CREATED_BY"
-        DOCKER_TAG="$REGISTRY/$PROJECT_NAME:$IMAGE_VERSION"
+        DOCKER_TAG="$REGISTRY/$PROJECT_NAME/$IMAGE_NAME:$IMAGE_VERSION"
+    
         DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1298966562560278528/ZxIheTb2XWWhAtQrC2_S58tcSlszIp_qD1RG9j9hOk8hh1gS6YOCq7JDWG7aNpYvM5eq' // Replace with your Discord webhook URL
 
     }
