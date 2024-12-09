@@ -1,0 +1,79 @@
+
+pipeline {
+    agent any
+    environment {
+        REGISTRY="hub.docker.com"
+        dockerRegistryCredential='hub.docker.com'
+        DOCKER_REGISTRY_URL="https://$REGISTRY"
+        IMAGE_CREATED_BY="jenkins"
+        IMAGE_NAME="php-app-prod"
+        HARBOR_PROJECT="wahaduzzaman/php-app-prod"
+        NAMESPACE="abc"
+ 
+        GIT_TAG=sh(returnStdout: true, script: '''        
+            echo $(git describe --tags)
+        ''').trim()
+
+
+        DEPLOYMENT_ENV_VERSION="$NAMESPACE"
+        IMAGE_VERSION="$BUILD_NUMBER-$IMAGE_CREATED_BY-$DEPLOYMENT_ENV_VERSION"
+        DOCKER_TAG="$REGISTRY/$HARBOR_PROJECT/$IMAGE_NAME:$IMAGE_VERSION"
+        DEPLOYMENT_DIRECTORY="./deploy/prod"
+
+		
+	    }
+
+
+
+    stages {
+
+     stage('Init') {
+            steps {
+                sh '''
+                COMMIT_ID=$(git log -1|head -1|awk -F ' ' ' {print $NF}')
+                echo "........result of commit .... $COMMIT_ID"
+                '''
+            }
+        }
+      
+     stage('Building Docker image') { 
+            steps { 
+                script { 
+                    dockerImage = docker.build("$DOCKER_TAG", "-f ./Dockerfile .")
+                }
+                sh '''
+                docker images|grep $IMAGE_NAME
+                '''
+            } 
+        }
+
+      stage('Push docker image') {
+            steps{
+                script {
+                    docker.withRegistry( "$DOCKER_REGISTRY_URL", dockerRegistryCredential ) {
+                        dockerImage.push()
+                        sh "docker images|grep $IMAGE_NAME"
+                    }
+                    
+                }
+            }
+        }
+     
+
+     stage('Deleted image After upload to Registry') {
+            steps {
+                echo "Cleaning local docker registry $DOCKER_TAG image"
+                sh 'docker rmi $DOCKER_TAG'
+            }
+        }
+     stage('Trigger ManifestUpdate') {
+            steps{
+                echo "triggering updatemanifestjob"
+                build job: 'update_manifest', parameters: [
+                    string(name: 'DOCKER_TAG', value: env.DOCKER_TAG),
+                    ]
+            }
+        }
+    }
+}
+

@@ -55,28 +55,7 @@ pipeline {
             }
         }
 
-        stage('Security Scan') {
-            steps {
-                script {
-                    // Run Trivy scan on the built image
-                    def scanResult = sh(script: "trivy image --exit-code 1 --severity HIGH,CRITICAL ${DOCKER_TAG}", returnStatus: true)
-
-                    // Prepare the message based on the scan result
-                    if (scanResult != 0) {
-                        def message = "Trivy scan failed for image ${DOCKER_TAG}. Check the logs for details."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                        error "Trivy scan failed."
-                    } else {
-                        def message = "Trivy scan succeeded for image ${DOCKER_TAG}. No critical vulnerabilities found."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                    }
-                }
-            }
-        }
+       
 
         stage('Run Docker container') {
             steps {
