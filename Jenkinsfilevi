@@ -1,17 +1,19 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'php:8.1-cli' // Use a PHP Docker image
+        }
+    }
 
     environment {
-        // Define Docker Hub credentials
         DOCKER_HUB_USER = 'wahaduzzaman'
         DOCKER_HUB_EMAIL = 'wahid08034@gmail.com'
-        DOCKER_IMAGE = "php-app:${env.BUILD_NUMBER}" // Dynamic image tag using build number
+        DOCKER_IMAGE = "php-app:${env.BUILD_NUMBER}"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Clone PHP application code from the repository
                 checkout scm
             }
         }
@@ -19,11 +21,10 @@ pipeline {
         stage('Build PHP Application') {
             steps {
                 script {
-                    // Run PHP unit tests or linting (optional)
                     sh '''
                     echo "Running PHP tests..."
-                    # Replace the following line with actual PHP commands like composer install, phpunit, etc.
                     php --version
+                    # Add more PHP-related commands here
                     '''
                 }
             }
@@ -32,7 +33,6 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Build the Docker image for the PHP app
                     sh "docker build -t ${DOCKER_HUB_USER}/${DOCKER_IMAGE} ."
                 }
             }
@@ -41,7 +41,6 @@ pipeline {
         stage('Login to Docker Hub') {
             steps {
                 script {
-                    // Log in to Docker Hub
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
                         sh "echo ${PASSWORD} | docker login -u ${USERNAME} --password-stdin"
                     }
@@ -52,7 +51,6 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 script {
-                    // Push the built Docker image to Docker Hub
                     sh "docker push ${DOCKER_HUB_USER}/${DOCKER_IMAGE}"
                 }
             }
@@ -61,7 +59,6 @@ pipeline {
         stage('Cleanup') {
             steps {
                 script {
-                    // Clean up Docker resources
                     sh "docker rmi ${DOCKER_HUB_USER}/${DOCKER_IMAGE}"
                 }
             }
@@ -70,7 +67,6 @@ pipeline {
 
     post {
         always {
-            // Notify the status and clean up workspace
             echo "Pipeline completed!"
             cleanWs()
         }
