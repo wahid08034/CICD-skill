@@ -33,6 +33,21 @@ pipeline {
                 }
             }
         }
+    pipeline {
+        agent {
+           docker {
+              image 'docker:latest'
+              args '-v /var/run/docker.sock:/var/run/docker.sock'
+              }
+            }
+
+        stages {
+           stage('Build Docker Image') {
+              steps {
+                 sh 'docker --version'
+                 sh 'docker build -t hub.docker.com/php-app:7-wahid-null -f ./Dockerfile .'
+               }
+            }
 
         stage('Building Docker image') { 
             steps { 
