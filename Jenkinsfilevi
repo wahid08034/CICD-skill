@@ -1,166 +1,78 @@
 pipeline {
     agent any
+
     environment {
-        REGISTRY="hub.docker.com"
-        dockerRegistryCredential='docker.credentials'
-        dockerImage = ''
-        DOCKER_REGISTRY_URL="https://$REGISTRY"
-        IMAGE_CREATED_BY="jenkins"
-        PROJECT_NAME="php-app-prod"
-        GIT_TAG=sh(returnStdout: true, script: '''        
-            echo $(git describe --tags)
-        ''').trim()
-        IMAGE_VERSION="$BUILD_NUMBER-$IMAGE_CREATED_BY"
-        DOCKER_TAG="$REGISTRY/$PROJECT_NAME:$IMAGE_VERSION"
+        // Define Docker Hub credentials
+        DOCKER_HUB_USER = 'wahaduzzaman'
+        DOCKER_HUB_EMAIL = 'wahid08034@gmail.com'
+        DOCKER_IMAGE = "php-app:${env.BUILD_NUMBER}" // Dynamic image tag using build number
     }
 
     stages {
-        stage('Configure Git') {
+        stage('Checkout') {
             steps {
-                sh '''
-                git config user.email "wahid08034@gmail.com"
-                git config user.name "wahid"
-                '''
+                // Clone PHP application code from the repository
+                checkout scm
             }
         }
 
-        stage('Tag and Push') {
+        stage('Build PHP Application') {
             steps {
                 script {
-                    // Create and push a Git tag
+                    // Run PHP unit tests or linting (optional)
                     sh '''
-                    git tag -a v1.0 -m "Version 1.0"
-                    git push --tags
+                    echo "Running PHP tests..."
+                    # Replace the following line with actual PHP commands like composer install, phpunit, etc.
+                    php --version
                     '''
                 }
             }
         }
 
-        stage('Init') {
+        stage('Build Docker Image') {
             steps {
-                sh '''
-                COMMIT_ID=$(git log -1|head -1|awk -F ' ' ' {print $NF}')
-                echo "Commit ID: $COMMIT_ID"
-                '''
+                script {
+                    // Build the Docker image for the PHP app
+                    sh "docker build -t ${DOCKER_HUB_USER}/${DOCKER_IMAGE} ."
+                }
             }
         }
 
-        stage('Building Docker image') { 
-            steps { 
-                script { 
-                    dockerImage = docker.build("$DOCKER_TAG", "-f ./Dockerfile .")
-                }
-                sh '''
-                docker images | grep $PROJECT_NAME
-                '''
-            } 
-        }
-
-        stage('Push Docker image') {
+        stage('Login to Docker Hub') {
             steps {
                 script {
-                    docker.withRegistry( "$DOCKER_REGISTRY_URL", dockerRegistryCredential ) {
-                        dockerImage.push()
-                        sh "docker images | grep $PROJECT_NAME"
+                    // Log in to Docker Hub
+                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        sh "echo ${PASSWORD} | docker login -u ${USERNAME} --password-stdin"
                     }
                 }
             }
         }
- 
-        stage('Security Scan') {
-            steps {
-                script {
-                    // Run Trivy scan on the built image
-                    def scanResult = sh(script: "trivy image --exit-code 1 --severity HIGH,CRITICAL $DOCKER_TAG", returnStatus: true)
-                    
-                    // Prepare the message based on the scan result
-                    if (scanResult != 0) {
-                        // Send failure message to Discord
-                        def message = "Trivy scan failed for image $DOCKER_TAG. Check the logs for details."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                    } else {
-                        // Send success message to Discord
-                        def message = "Trivy scan succeeded for image $DOCKER_TAG. No critical vulnerabilities found."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                    }
-                }
-            }
-        }              
 
-        stage('Run Docker container') {
-            steps {
-                echo "Running Docker container for PHP app"
-                sh '''
-                docker run -d --name php-app -p 8088:80 $DOCKER_TAG
-                '''
-            }
-        }
-       
-        stage('Run PHPUnit Tests') {
+        stage('Push Docker Image') {
             steps {
                 script {
-                    echo "Running PHPUnit tests in Docker container"
-                    def testResult = sh(script: '''
-                    docker exec php-app /var/www/html/vendor/bin/phpunit --configuration phpunit.xml
-                    ''', returnStatus: true)
+                    // Push the built Docker image to Docker Hub
+                    sh "docker push ${DOCKER_HUB_USER}/${DOCKER_IMAGE}"
+                }
+            }
+        }
 
-                    // Send test result to Discord
-                    if (testResult != 0) {
-                        def message = "Unit tests failed in Docker container php-app. Check the logs for details."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                    } else {
-                        def message = "Unit tests passed successfully in Docker container php-app."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                    }
+        stage('Cleanup') {
+            steps {
+                script {
+                    // Clean up Docker resources
+                    sh "docker rmi ${DOCKER_HUB_USER}/${DOCKER_IMAGE}"
                 }
             }
         }
-        stage('Run SQA Testing') {
-            steps {
-                script {
-                    echo "Running SQA testing for PHP application"
-                    def sqaResult = sh(script: '''
-                    # Example placeholder for running SQA tests
-                    echo "Running SQA tests..."
-                    # Add your actual SQA testing commands here
-                    ''', returnStatus: true)
+    }
 
-                    // Send SQA test result to Discord
-                    if (sqaResult != 0) {
-                        def message = "SQA tests failed for the PHP application. Check the logs for details."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                    } else {
-                        def message = "SQA tests passed successfully for the PHP application."
-                        sh """
-                        curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                        """
-                    }
-                }
-            }
+    post {
+        always {
+            // Notify the status and clean up workspace
+            echo "Pipeline completed!"
+            cleanWs()
         }
-        stage('Deploy') {
-            steps {
-                script {
-                    // Deploy your Docker image here
-                    sh 'docker run -d $DOCKER_TAG'
-                    
-                    // Send deployment success message to Discord
-                    def message = "Deployment of $DOCKER_TAG was successful."
-                    sh """
-                    curl -H "Content-Type: application/json" -d '{ "content": "${message}" }' ${DISCORD_WEBHOOK_URL}
-                    """
-                }
-            }
-        }
-    }    
+    }
 }
