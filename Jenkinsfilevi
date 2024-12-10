@@ -2,11 +2,11 @@ pipeline {
     agent any
     environment {
         REGISTRY="hub.docker.com"
-        dockerRegistryCredential='docker.credentials'
+        dockerRegistryCredential='devskill'
         dockerImage = ''
         DOCKER_REGISTRY_URL="https://$REGISTRY"
         IMAGE_CREATED_BY="jenkins"
-        PROJECT_NAME="php-app"
+        PROJECT_NAME="php-app-prod"
         GIT_TAG=sh(returnStdout: true, script: '''        
             echo $(git describe --tags)
         ''').trim()
@@ -15,6 +15,15 @@ pipeline {
     }
 
     stages {
+        stage('Configure Git') {
+            steps {
+                sh '''
+                git config user.email "you@example.com"
+                git config user.name "Your Name"
+                '''
+            }
+        }
+
         stage('Tag and Push') {
             steps {
                 script {
