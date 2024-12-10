@@ -1,0 +1,89 @@
+pipeline {
+    agent any
+    environment {
+        REGISTRY = "hub.docker.com"
+        dockerRegistryCredential = 'docker.credentials'
+        dockerImage = ''
+        DOCKER_REGISTRY_URL = "https://$REGISTRY"
+        IMAGE_CREATED_BY = "wahid"
+        PROJECT_NAME = "php-app"
+
+        GIT_TAG = sh(returnStdout: true, script: '''
+            echo $(git describe --tags)
+        ''').trim()
+
+        PROJECT_LOCATION = "$JENKINS_DATA_LOCATION/workspace/$JOB_NAME"
+        IMAGE_VERSION = "$BUILD_NUMBER-$IMAGE_CREATED_BY-$DEPLOYMENT_ENV_VERSION"
+        DOCKER_TAG = "$REGISTRY/$PROJECT_NAME:$IMAGE_VERSION"
+        DEPLOYMENT_DIRECTORY = "Jenkinsfilevi"
+    }
+
+    stages {
+        stage('Init') {
+            steps {
+                script {
+                    COMMIT_ID = sh(
+                        script: "git log -1 --pretty=format:'%H'",
+                        returnStdout: true
+                    ).trim()
+                    echo "Commit ID: $COMMIT_ID"
+                }
+            }
+        }
+        
+        stage('Build Using Docker Agent') {
+            agent {
+                docker {
+                    image 'docker:latest'
+                    args '-v /var/run/docker.sock:/var/run/docker.sock'
+                }
+            }
+            stages {
+                stage('Build Docker Image') {
+                    steps {
+                        sh 'docker --version'
+                        sh 'docker build -t hub.docker.com/php-app:7-wahid-null -f ./Dockerfile .'
+                    }
+                }
+            }
+        }
+
+        stage('Building Docker Image') {
+            steps {
+                script {
+                    dockerImage = docker.build(DOCKER_TAG, "-f ./Dockerfile .")
+                }
+                sh '''
+                docker images | grep ${PROJECT_NAME}
+                '''
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry("$DOCKER_REGISTRY_URL", dockerRegistryCredential) {
+                        dockerImage.push()
+                    }
+                    sh "docker images | grep ${PROJECT_NAME}"
+                }
+            }
+        }
+
+        stage('Delete Image After Upload to Registry') {
+            steps {
+                echo "Cleaning local Docker registry: ${DOCKER_TAG} image"
+                sh "docker rmi ${DOCKER_TAG}"
+            }
+        }
+
+        stage('Trigger Manifest Update') {
+            steps {
+                echo "Triggering update_manifest job"
+                build job: 'dev-ba-systems-course-course-manifest', parameters: [
+                    string(name: 'DOCKER_TAG', value: DOCKER_TAG)
+                ]
+            }
+        }
+    }
+}
