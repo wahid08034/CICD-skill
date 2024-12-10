@@ -1,74 +1,75 @@
 pipeline {
-    agent {
-        docker {
-            image 'php:8.1-cli'
-            args '-u root:root' // Optional: Run as root if permissions are an issue
-        }
-    }
-
+    agent any
     environment {
-        DOCKER_HUB_USER = 'wahaduzzaman'
-        DOCKER_HUB_EMAIL = 'wahid08034@gmail.com'
-        DOCKER_IMAGE = "php-app:${env.BUILD_NUMBER}"
-    }
+        REGISTRY="hub.docker.com"
+        dockerRegistryCredential='docker.credentials'
+        dockerImage = ''
+        DOCKER_REGISTRY_URL="https://$REGISTRY"
+        IMAGE_CREATED_BY="wahid"
+        PROJECT_NAME="php-app"
+ 
+        GIT_TAG=sh(returnStdout: true, script: '''        
+            echo $(git describe --tags)
+        ''').trim()
+
+
+        PROJECT_LOCATION="$JENKINS_DATA_LOCATION/workspace/$JOB_NAME"
+        IMAGE_VERSION="$BUILD_NUMBER-$IMAGE_CREATED_BY-$DEPLOYMENT_ENV_VERSION"
+        DOCKER_TAG="$REGISTRY/$PROJECT_NAME:$IMAGE_VERSION"
+        DEPLOYMENT_DIRECTORY="Jenkinsfilevi"
+		
+	    }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
 
-        stage('Build PHP Application') {
+        stage('Init') {
             steps {
                 script {
-                    sh '''
-                    echo "Running PHP tests..."
-                    php --version
-                    '''
+                    COMMIT_ID = sh(
+                        script: "git log -1 --pretty=format:'%H'",
+                        returnStdout: true
+                    ).trim()
+                    echo "Commit ID: $COMMIT_ID"
                 }
             }
         }
 
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    sh "docker build -t ${DOCKER_HUB_USER}/${DOCKER_IMAGE} ."
+        stage('Building Docker image') { 
+            steps { 
+                script { 
+                    dockerImage = docker.build(DOCKER_TAG, "-f ./Dockerfile .")
                 }
-            }
+                sh '''
+                docker images | grep ${PROJECT_NAME}
+                '''
+            } 
         }
 
-        stage('Login to Docker Hub') {
+        stage('Push Docker image') {
             steps {
                 script {
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
-                        sh "echo ${PASSWORD} | docker login -u ${USERNAME} --password-stdin"
+                    docker.withRegistry("$DOCKER_REGISTRY_URL", dockerRegistryCredential) {
+                        dockerImage.push()
                     }
+                    sh "docker images | grep ${PROJECT_NAME}"
                 }
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Delete Image After Upload to Registry') {
             steps {
-                script {
-                    sh "docker push ${DOCKER_HUB_USER}/${DOCKER_IMAGE}"
-                }
+                echo "Cleaning local Docker registry: ${DOCKER_TAG} image"
+                sh "docker rmi ${DOCKER_TAG}"
             }
         }
 
-        stage('Cleanup') {
+        stage('Trigger Manifest Update') {
             steps {
-                script {
-                    sh "docker rmi ${DOCKER_HUB_USER}/${DOCKER_IMAGE}"
-                }
+                echo "Triggering update_manifest job"
+                build job: 'dev-ba-systems-course-course-manifest', parameters: [
+                    string(name: 'DOCKER_TAG', value: DOCKER_TAG)
+                ]
             }
-        }
-    }
-
-    post {
-        always {
-            echo "Pipeline completed!"
-            cleanWs()
         }
     }
 }
