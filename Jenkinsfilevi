@@ -1,7 +1,8 @@
 pipeline {
     agent {
         docker {
-            image 'php:8.1-cli' // Use a PHP Docker image
+            image 'php:8.1-cli'
+            args '-u root:root' // Optional: Run as root if permissions are an issue
         }
     }
 
@@ -24,7 +25,6 @@ pipeline {
                     sh '''
                     echo "Running PHP tests..."
                     php --version
-                    # Add more PHP-related commands here
                     '''
                 }
             }
